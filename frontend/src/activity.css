@@ -1,0 +1,9 @@
+.activity-trail{border-top:1px solid #e8e8df;padding:12px 23px;color:#89957b;font-size:10px}
+.activity-trail summary{cursor:pointer;font-weight:550;display:flex;justify-content:space-between;gap:10px}
+.activity-trail summary span{font-size:9px;color:#a6ad9c;font-weight:400}
+.activity-trail ol{padding-left:17px;margin-bottom:2px;font-size:10px;line-height:2;color:#959f89}
+.calculation-list{padding:16px 23px;border-top:1px solid #e8e8df;background:#fafbf5}
+.calculation{margin-top:12px}
+.calculation strong{font-size:11px;font-weight:550;color:#637258}
+.calculation p{font-size:9px;line-height:1.7;color:#8c987f;margin:5px 0}
+.calculation small{font-size:9px;line-height:1.7;color:#9d9e85;display:block}

@@ -1,0 +1,23 @@
+# Deploy voice-kam as the repository root, or set rootDir: voice-kam in the dashboard.
+# Native Python service: Docker is not required.
+services:
+  - type: web
+    name: seller-voice-kam
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.1
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: LIVE_MODEL
+        value: gemini-3.8-live
+      - key: PLANNER_MODEL
+        value: gemini-3.5-flash-lite
+      - key: PLANNER_THINKING_LEVEL
+        value: minimal
+      - key: SECURE_COOKIES
+        value: true
