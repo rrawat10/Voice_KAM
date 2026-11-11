@@ -8,6 +8,11 @@ test('mock data, isolated session and refresh', async ({ page, browser }) => {
   await page.getByRole('button', { name: 'Use mock data' }).click();
   await expect(page.getByRole('cell', { name: '₹1,35,000', exact: true })).toBeVisible();
   await expect(page.getByLabel('Are these comparable time periods?')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear & restart' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Clear & restart' }).click();
+  await expect(page.getByRole('button', { name: 'Start conversation' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Use mock data' }).click();
+  await expect(page.getByRole('button', { name: 'Clear & restart' })).toBeEnabled();
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
   const separate = await browser.newContext();
   const other = await separate.newPage(); await other.goto('/');
@@ -17,7 +22,7 @@ test('mock data, isolated session and refresh', async ({ page, browser }) => {
   await page.reload();
   await page.getByRole('button', { name: 'Data preview' }).click();
   await expect(page.getByRole('cell', { name: '₹1,35,000', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'End & clear session' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear & restart' })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

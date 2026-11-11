@@ -150,6 +150,17 @@ async def get_session(request: Request):
     return public_state(state)
 
 
+@app.delete('/api/session')
+async def end_session(request: Request):
+    """End the current voice session and remove its temporary browser locator."""
+    sid = request.cookies.get('kam_session', '')
+    if sid:
+        await clear_session(sid, 'cleared')
+    response = JSONResponse({'ok': True})
+    response.delete_cookie('kam_session', samesite='strict', secure=settings.secure_cookies)
+    return response
+
+
 @app.get('/api/events')
 async def sse(request: Request):
     sid, state = await current_session(request)

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowUpRight, AudioLines, Check, ChevronRight, CircleHelp, Database, Download, FileSpreadsheet, Headphones, Info, LoaderCircle, Mic, MicOff, Send, ShieldCheck, Square, Upload, X } from 'lucide-react';
+import { ArrowUpRight, AudioLines, Check, ChevronRight, CircleHelp, Database, Download, FileSpreadsheet, Headphones, Info, LoaderCircle, Mic, MicOff, RefreshCw, Send, ShieldCheck, Square, Upload, X } from 'lucide-react';
 import { VoiceConnection } from './audio';
 import './style.css';
 import './activity.css';
@@ -44,6 +44,7 @@ function App() {
     eventSource.current?.close();
     const source = new EventSource('/api/events'); eventSource.current = source;
     source.onmessage = event => {
+      if (eventSource.current !== source) return;
       const { type, data } = JSON.parse(event.data);
       if (type === 'snapshot') {
         setSession(data);
@@ -84,6 +85,17 @@ function App() {
     } catch (e) { setError(e.message); }
     finally { setBusy(false); if (fileInput.current) fileInput.current.value = ''; }
   }
+  async function clearSession() {
+    setBusy(true); setError(''); setNotice('');
+    voice.current?.close(); voice.current = null;
+    eventSource.current?.close(); eventSource.current = null;
+    try {
+      await api('/api/session', { method: 'DELETE' });
+      setSession(null); setTurns([]); setTiming({}); setTrail([]); setStage('idle'); setPanel('insights');
+      setActivity('Choose mock data or upload a sheet to start a new conversation.');
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
   async function start() {
     setError(''); setMuted(false); setPanel('insights');
     voice.current?.close();
@@ -102,7 +114,7 @@ function App() {
     </header>
 
     <main>
-      <div className="page-heading"><div><p className="eyebrow">SNAPDEAL SELLER ACCOUNT MANAGER</p><h1>Let’s talk business<span>.</span></h1><p className="subtitle">A conversation that turns your numbers into a next step.</p></div></div>
+      <div className="page-heading"><div><p className="eyebrow">SNAPDEAL SELLER ACCOUNT MANAGER</p><h1>Let’s talk business<span>.</span></h1><p className="subtitle">A conversation that turns your numbers into a next step.</p></div><button className="secondary reset-button" disabled={!session || busy} onClick={clearSession}><RefreshCw size={14}/> Clear &amp; restart</button></div>
       {error && <div role="alert" className="notice error"><Info size={18}/><span>{error}</span><button aria-label="Dismiss error" onClick={() => setError('')}><X size={16}/></button></div>}
       {notice && <div role="status" className="notice setup"><Info size={17}/><span>{notice}</span><button aria-label="Dismiss notice" onClick={() => setNotice('')}><X size={16}/></button></div>}
       {health && !health.voice_configured && <div className="notice setup"><Info size={17}/><span><strong>Voice setup pending.</strong> Add a Gemini API key on the server to enable conversations. You can explore mock data and upload Excel now.</span></div>}

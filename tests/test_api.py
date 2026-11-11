@@ -19,7 +19,9 @@ def test_data_preview_upload_and_replacement():
         assert client.post('/api/sessions/upload', files={'file': ('data.xlsx', excel_template())}).status_code == 200
         assert client.get('/api/session').json()['dataset']['source'] == 'uploaded spreadsheet'
         assert old_id not in store.memory
-        assert client.delete('/api/session').status_code == 405
+        cleared = client.delete('/api/session')
+        assert cleared.status_code == 200
+        assert client.get('/api/session').status_code == 401
 
 
 def test_invalid_upload_does_not_replace_existing_data():
