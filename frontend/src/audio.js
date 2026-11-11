@@ -23,6 +23,7 @@ export class VoiceConnection {
         const msg = JSON.parse(event.data);
         if (msg.type === 'ready') { this.ready = true; this.onStatus('listening'); }
         if (msg.type === 'interrupt') this.interrupt();
+        if (msg.type === 'speech_fallback') this.speakChecked(msg.text);
         if (msg.type === 'error') this.onError(msg.message);
       };
       this.socket.onclose = () => { this.close(); this.onStatus('disconnected'); };
@@ -70,6 +71,19 @@ export class VoiceConnection {
     this.nextTime = start + buffer.duration; this.sources.add(source);
     source.onended = () => { this.sources.delete(source); if (!this.sources.size) this.onPlayback(false); };
     source.start(start); this.onPlayback(true);
+  }
+  speakChecked(text) {
+    if (!text || !('speechSynthesis' in window)) {
+      this.onError('The checked response could not be played by the browser. Please retry this turn.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = /[\u0900-\u097F]/.test(text) ? 'hi-IN' : 'en-IN';
+    utterance.onstart = () => { this.onPlayback(true); this.onStatus('speaking'); };
+    utterance.onend = () => { this.onPlayback(false); this.onStatus('listening'); };
+    utterance.onerror = () => { this.onPlayback(false); this.onStatus('listening'); };
+    window.speechSynthesis.speak(utterance);
   }
   interrupt() {
     for (const source of this.sources) { try { source.stop(); } catch {} }

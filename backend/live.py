@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+import unicodedata
 
 from google import genai
 from google.genai import types
@@ -11,6 +12,12 @@ from .planner import apply_decision, plan_turn, refresh_summary
 from .memory import recent_turns
 
 logger = logging.getLogger(__name__)
+
+
+def spoken_tokens(text):
+    """Normalize transcript text for an exact semantic-safe audio gate."""
+    normalized = unicodedata.normalize('NFKC', text).casefold()
+    return [part for part in ''.join(ch if ch.isalnum() or ch.isspace() else ' ' for ch in normalized).split() if part]
 
 
 VOICE_INSTRUCTIONS = """You are Mira, a calm, practical seller account manager in a mock-data demo.
@@ -53,6 +60,9 @@ async def run_live(ws, sid, store, events, settings, locks):
     tool_ids = set()
     completed_epoch = -1
     turn_open = False
+    approved_speech = ''
+    approved_epoch = -1
+    buffered_audio = []
 
     def tool_finished(task):
         tools_running.discard(task)
@@ -90,7 +100,7 @@ async def run_live(ws, sid, store, events, settings, locks):
             await session.send_client_content(turns=types.Content(role='user', parts=[types.Part(text=greeting)]), turn_complete=True)
 
             async def handle_tool(fc, target_epoch, utterance):
-                nonlocal allowed_epoch, completed_epoch, user_buffer
+                nonlocal allowed_epoch, completed_epoch, user_buffer, approved_speech, approved_epoch, buffered_audio
                 async def respond(payload):
                     await session.send_tool_response(function_responses=[types.FunctionResponse(id=fc.id, name=fc.name, response=payload)])
                 if fc.name != 'plan_business_turn':
@@ -122,6 +132,9 @@ async def run_live(ws, sid, store, events, settings, locks):
                         await store.save(current)
                         completed_epoch = target_epoch
                         allowed_epoch = target_epoch
+                        approved_speech = decision.speech
+                        approved_epoch = target_epoch
+                        buffered_audio = []
                         user_buffer = ''
                         await emit('snapshot', public_state(current))
                         await emit('timing', {'planner_ms': round((time.perf_counter() - started) * 1000)})
@@ -203,7 +216,7 @@ async def run_live(ws, sid, store, events, settings, locks):
                             await session.send_client_content(turns=types.Content(role='user', parts=[types.Part(text=user_buffer)]), turn_complete=True)
 
             async def downstream():
-                nonlocal user_buffer, assistant_buffer, first_audio, allowed_epoch, epoch, turn_open
+                nonlocal user_buffer, assistant_buffer, first_audio, allowed_epoch, epoch, turn_open, buffered_audio
                 while True:
                     async for response in session.receive():
                         content = response.server_content
@@ -212,6 +225,7 @@ async def run_live(ws, sid, store, events, settings, locks):
                                 allowed_epoch = -1
                                 await ws.send_json({'type': 'interrupt'})
                                 assistant_buffer = ''
+                                buffered_audio = []
                             if content.input_transcription and content.input_transcription.text:
                                 # If local VAD missed the start, provider transcription still closes the speech gate.
                                 if not turn_open:
@@ -224,10 +238,14 @@ async def run_live(ws, sid, store, events, settings, locks):
                                 await emit('transcript', {'role': 'user', 'text': user_buffer, 'turn': epoch})
                             if content.output_transcription and content.output_transcription.text and allowed_epoch == epoch:
                                 assistant_buffer += content.output_transcription.text
-                                await emit('transcript', {'role': 'assistant', 'text': assistant_buffer, 'turn': epoch})
+                                if approved_epoch != epoch:
+                                    await emit('transcript', {'role': 'assistant', 'text': assistant_buffer, 'turn': epoch})
                             if content.model_turn and allowed_epoch == epoch:
                                 for part in content.model_turn.parts or []:
                                     if part.inline_data and part.inline_data.data:
+                                        if approved_epoch == epoch:
+                                            buffered_audio.append(part.inline_data.data)
+                                            continue
                                         await ws.send_bytes(part.inline_data.data)
                                         if not first_audio:
                                             first_audio = True
@@ -235,11 +253,23 @@ async def run_live(ws, sid, store, events, settings, locks):
                                             if last_user_end is not None:
                                                 await emit('timing', {'server_response_ms': round((time.perf_counter() - last_user_end) * 1000)})
                             if content.turn_complete:
-                                if assistant_buffer:
+                                spoken_text = assistant_buffer
+                                if approved_epoch == epoch:
+                                    matches_approved = bool(assistant_buffer) and spoken_tokens(assistant_buffer) == spoken_tokens(approved_speech)
+                                    spoken_text = approved_speech
+                                    if matches_approved:
+                                        for audio in buffered_audio:
+                                            await ws.send_bytes(audio)
+                                    else:
+                                        logger.warning('Discarded unapproved Live speech for turn %s', epoch)
+                                        await ws.send_json({'type': 'speech_fallback', 'text': approved_speech, 'turn': epoch})
+                                    await emit('transcript', {'role': 'assistant', 'text': spoken_text, 'turn': epoch})
+                                    buffered_audio = []
+                                if spoken_text:
                                     async with locks[sid]:
                                         current = await store.get(sid)
                                         if current:
-                                            current['history'].append({'role': 'assistant', 'text': assistant_buffer, 'turn': epoch})
+                                            current['history'].append({'role': 'assistant', 'text': spoken_text, 'turn': epoch})
                                             current['history'] = recent_turns(current['history'])
                                             await store.save(current)
                                     assistant_buffer = ''
