@@ -74,7 +74,7 @@ async def run_live(ws, sid, store, events, settings, locks):
         speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name='Kore'))),
         tools=[types.Tool(function_declarations=[types.FunctionDeclaration(
             name='plan_business_turn', description='Required before responding to each seller utterance; returns the only permitted spoken response.',
-            behavior='BLOCKING', parameters={'type': 'OBJECT', 'properties': {'utterance': {'type': 'STRING', 'description': 'Exact words just spoken by the seller, not a summary or instructions.'}}, 'required': ['utterance']},
+            behavior='BLOCKING', parameters={'type': 'OBJECT', 'properties': {'utterance': {'type': 'STRING', 'description': 'Exact words just spoken by the seller in the original spoken language. Do not translate, summarize, normalize, or infer a commitment.'}}, 'required': ['utterance']},
         )])],
         realtime_input_config=types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
             disabled=False, silence_duration_ms=400, prefix_padding_ms=200,
@@ -149,8 +149,8 @@ async def run_live(ws, sid, store, events, settings, locks):
                     allowed_epoch = target_epoch
                     logger.warning('Checked business turn failed: %s', type(exc).__name__)
                     if isinstance(exc, ValueError):
-                        await emit('error', {'message': 'I could not safely link that detail to the transcript and data. Please repeat the key point.'})
-                        await respond({'status': 'unavailable', 'speech': 'I want to make sure I understood that correctly. Please repeat the key detail once more.'})
+                        await emit('error', {'message': 'I heard the words, but could not safely link them to the current business data. Please repeat the key detail.'})
+                        await respond({'status': 'unavailable', 'speech': 'I heard that, but could not safely link it to the current business data. Please repeat the key detail once more.'})
                         return
                     await emit('error', {'message': safe_error(exc)})
                     await respond({'status': 'unavailable', 'speech': 'There was a short service problem. Please repeat that last point.'})
@@ -253,9 +253,11 @@ async def run_live(ws, sid, store, events, settings, locks):
                                 if fc.id in tool_ids:
                                     continue
                                 tool_ids.add(fc.id)
-                                # Prefer Gemini's completed function argument over partial
-                                # input-transcription fragments, especially for Hindi/Hinglish.
-                                utterance = str((fc.args or {}).get('utterance', '')).strip() or user_buffer.strip()
+                                # The input transcription is what the UI shows the seller and
+                                # is the closest representation of the words actually heard.
+                                # Live may translate or paraphrase its generated function
+                                # argument, which can fail exact-fact validation in Hindi/Hinglish.
+                                utterance = user_buffer.strip() or str((fc.args or {}).get('utterance', '')).strip()
                                 task = asyncio.create_task(handle_tool(fc, epoch, utterance))
                                 tools_running.add(task)
                                 task.add_done_callback(tool_finished)
